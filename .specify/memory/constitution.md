@@ -1,50 +1,59 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+# ContosoDashboard Project Constitution
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### I. Offline-First & Cloud-Ready Abstractions
+The application must run fully offline without mandatory cloud dependencies for local development, demo, and training environments. All storage and external services must be defined behind clear interfaces (e.g., `IFileStorageService`). Implementations like `LocalFileStorageService` must handle local file storage using the filesystem, allowing drop-in replacement with `AzureBlobStorageService` for production cloud deployment through configuration and dependency injection without changes to domain logic or database schemas.
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+### II. Security & Defense in Depth
+Security cannot rely on client-side constraints alone:
+- Uploaded files must be stored strictly outside `wwwroot` in a protected folder (e.g., `AppData/uploads/{userId}/{projectId or "personal"}/{guid}.{extension}`).
+- Files must be given unique GUID filenames upon storage to prevent path traversal attacks and duplicate filename conflicts.
+- File access and downloads must be mediated through authorized controller/service endpoints that verify user ownership, team membership, or project roles before serving streams.
+- File validation must enforce strict whitelisting of permitted file types (PDF, Office documents, plain text, JPEG, PNG) and a maximum size limit of 25 MB.
+- Authentication claims (including `NameIdentifier`, `Name`, `Email`, `Role`, and `Department`) must be populated to enable granular role- and department-based authorization.
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+### III. Clean Layered Architecture
+Maintain strict separation of concerns across:
+1. **Data Layer**: EF Core entities with integer primary keys (consistent with existing `User` and `Project` entities), descriptive text categories, and navigation properties.
+2. **Storage Layer**: Interface abstraction (`IFileStorageService`) decoupling physical storage from business logic.
+3. **Business Logic Layer**: Domain services (`IDocumentService`) orchestrating validation, disk persistence, DB record creation, and notifications.
+4. **Presentation Layer**: Blazor Server UI components utilizing defensive stream handling (`MemoryStream` copy pattern to prevent Blazor circuit disposal issues) and responsive feedback.
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+### IV. Safe State & Resource Management in Blazor
+File upload and asynchronous Blazor interactions must handle component lifecycles cleanly:
+- `IBrowserFile` streams must be immediately copied to an in-memory buffer or directly to the storage service before the browser file stream is disposed.
+- File reference pointers must be reset to avoid object reuse errors.
+- UI components must leverage `@key` bindings on `InputFile` elements to reset file input state predictably after submission.
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+### V. Testability & Measurable Acceptance Criteria
+All functional requirements must map to testable acceptance scenarios formulated in standard `Given-When-Then` format. Performance benchmarks are non-negotiable:
+- Document uploads up to 25 MB must finish within 30 seconds on standard network/disk.
+- Document list and search queries must complete within 2 seconds for datasets up to 500 documents.
+- Preview generation must render within 3 seconds.
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+### VI. Data Integrity & Transactional Safety
+When saving file records:
+- Physical storage must precede database record persistence: generate unique path -> save file -> commit DB transaction.
+- If physical disk write fails, no orphaned DB record is created.
+- File deletions must clean up both database metadata and physical storage files reliably.
+- Project and user associations must respect foreign key constraints and cascade rules defined in `ApplicationDbContext`.
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+### VII. Auditability & Notifications
+All key document operations (upload, download, metadata update, deletion, and sharing) must log structured audit information. Sharing a document or uploading to an assigned project must dispatch in-app notifications to affected team members via `INotificationService`.
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+---
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+## Technical Standards & Stack
+- **Framework**: .NET 8.0 / .NET 9.0 (ASP.NET Core & Blazor Server)
+- **Database**: Entity Framework Core with SQLite for offline/cross-platform environments, or SQL Server LocalDB
+- **Storage Strategy**: Local filesystem (`AppData/uploads`) with interface-based abstraction for Azure Blob Storage
+- **Authentication**: Cookie-based mock authentication with rich claims (`NameIdentifier`, `Name`, `Email`, `Role`, `Department`)
+- **Frontend**: Blazor Server, HTML5, Vanilla CSS, Bootstrap icons
+
+---
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
+This constitution supersedes ad-hoc coding patterns. Any architectural modifications, additions of third-party cloud SDKs, or alterations to storage pathways must adhere to the core principles above and obtain stakeholder review.
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
-
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+**Version**: 1.0.0 | **Ratified**: 2026-09-10 | **Last Amended**: 2026-09-10

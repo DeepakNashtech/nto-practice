@@ -1,0 +1,587 @@
+@page "/documents"
+@attribute [Authorize]
+@using ContosoDashboard.Models
+@using ContosoDashboard.Services
+@using System.Security.Claims
+@inject IDocumentService DocumentService
+@inject IProjectService ProjectService
+@inject IUserService UserService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
+
+<div class="container-fluid px-4 py-3">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="h3 fw-bold text-gray-800 mb-1">
+                <i class="bi bi-file-earmark-text text-primary me-2"></i>Document Management
+            </h2>
+            <p class="text-muted small mb-0">Upload, organize, and access work documents securely.</p>
+        </div>
+        <div>
+            <button class="btn btn-primary d-inline-flex align-items-center shadow-sm" @onclick="OpenUploadModal">
+                <i class="bi bi-cloud-arrow-up me-2"></i>Upload Document
+            </button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(successMessage))
+    {
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            <i class="bi bi-check-circle-fill me-2"></i>@successMessage
+            <button type="button" class="btn-close" @onclick="() => successMessage = null"></button>
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>@errorMessage
+            <button type="button" class="btn-close" @onclick="() => errorMessage = null"></button>
+        </div>
+    }
+
+    <!-- Search and Filter Controls -->
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-body">
+            <div class="row g-3 align-items-center">
+                <div class="col-md-5">
+                    <div class="input-group">
+                        <span class="input-group-text bg-light border-end-0">
+                            <i class="bi bi-search text-muted"></i>
+                        </span>
+                        <input type="text" class="form-control border-start-0" placeholder="Search by title, description, or tag..." 
+                               @bind="searchTerm" @bind:event="oninput" @bind:after="ApplyFilterAsync" />
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <select class="form-select" @bind="selectedCategory" @bind:after="ApplyFilterAsync">
+                        <option value="All">All Categories</option>
+                        <option value="Project Documents">Project Documents</option>
+                        <option value="Team Resources">Team Resources</option>
+                        <option value="Personal Files">Personal Files</option>
+                        <option value="Reports">Reports</option>
+                        <option value="Presentations">Presentations</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+                <div class="col-md-4 text-end text-muted small">
+                    Showing <strong>@filteredDocuments.Count</strong> document@(filteredDocuments.Count == 1 ? "" : "s")
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Documents Table -->
+    <div class="card shadow-sm border-0">
+        <div class="card-header bg-white py-3">
+            <h5 class="card-title mb-0 fw-semibold text-dark">
+                <i class="bi bi-folder2-open me-2 text-secondary"></i>Documents List
+            </h5>
+        </div>
+        <div class="card-body p-0">
+            @if (isLoading)
+            {
+                <div class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading documents...</span>
+                    </div>
+                    <p class="text-muted mt-2">Loading documents...</p>
+                </div>
+            }
+            else if (!filteredDocuments.Any())
+            {
+                <div class="text-center py-5">
+                    <i class="bi bi-file-earmark-x display-4 text-muted"></i>
+                    <p class="mt-3 text-muted">No documents found matching your criteria.</p>
+                    <button class="btn btn-outline-primary btn-sm" @onclick="OpenUploadModal">
+                        Upload your first document
+                    </button>
+                </div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th scope="col" style="min-width: 250px;">Title & File</th>
+                                <th scope="col">Category</th>
+                                <th scope="col">Project</th>
+                                <th scope="col">Size</th>
+                                <th scope="col">Uploaded</th>
+                                <th scope="col">By</th>
+                                <th scope="col" class="text-end" style="min-width: 140px;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var doc in filteredDocuments)
+                            {
+                                <tr>
+                                    <td>
+                                        <div class="d-flex align-items-center">
+                                            <div class="me-3 fs-3 text-primary">
+                                                @GetFileIcon(doc.FileName)
+                                            </div>
+                                            <div>
+                                                <span class="fw-semibold text-dark d-block">@doc.Title</span>
+                                                <small class="text-muted">@doc.FileName</small>
+                                                @if (!string.IsNullOrEmpty(doc.Tags))
+                                                {
+                                                    <span class="badge bg-light text-secondary border ms-2">@doc.Tags</span>
+                                                }
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-secondary-subtle text-secondary px-2 py-1 rounded-pill">
+                                            @doc.Category
+                                        </span>
+                                    </td>
+                                    <td>
+                                        @if (doc.Project != null)
+                                        {
+                                            <span class="badge bg-info-subtle text-info px-2 py-1 rounded-pill">
+                                                <i class="bi bi-briefcase me-1"></i>@doc.Project.Name
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted small">Personal</span>
+                                        }
+                                    </td>
+                                    <td class="text-muted small">
+                                        @FormatBytes(doc.FileSize)
+                                    </td>
+                                    <td class="text-muted small">
+                                        @doc.UploadDate.ToLocalTime().ToString("MMM dd, yyyy")
+                                    </td>
+                                    <td class="small">
+                                        @(doc.UploadedByUser?.DisplayName ?? "Unknown")
+                                    </td>
+                                    <td class="text-end">
+                                        <a href="/api/documents/@doc.DocumentId/download" target="_blank" class="btn btn-sm btn-outline-primary me-1" title="Download Document">
+                                            <i class="bi bi-download"></i>
+                                        </a>
+                                        @if (CanPreview(doc.FileName))
+                                        {
+                                            <a href="/api/documents/@doc.DocumentId/preview" target="_blank" class="btn btn-sm btn-outline-info me-1" title="Preview in Browser">
+                                                <i class="bi bi-eye"></i>
+                                            </a>
+                                        }
+                                        <button class="btn btn-sm btn-outline-secondary me-1" title="Share Document" @onclick="() => OpenShareModal(doc)">
+                                            <i class="bi bi-share"></i>
+                                        </button>
+                                        @if (doc.UploadedByUserId == currentUserId || isAdministrator)
+                                        {
+                                            <button class="btn btn-sm btn-outline-danger" title="Delete Document" @onclick="() => DeleteDocumentAsync(doc)">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<!-- Upload Modal -->
+@if (showUploadModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title">
+                        <i class="bi bi-cloud-arrow-up me-2"></i>Upload Document
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CloseUploadModal"></button>
+                </div>
+                <div class="modal-body p-4">
+                    @if (!string.IsNullOrEmpty(modalError))
+                    {
+                        <div class="alert alert-danger py-2 small" role="alert">
+                            <i class="bi bi-exclamation-triangle-fill me-2"></i>@modalError
+                        </div>
+                    }
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Select File <span class="text-danger">*</span></label>
+                        <InputFile OnChange="HandleFileSelected" @key="inputFileKey" class="form-control" />
+                        <div class="form-text small">
+                            Max 25 MB. Supported: PDF, Word, Excel, PowerPoint, Text, PNG, JPEG.
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Document Title <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" placeholder="e.g. Q4 Financial Summary" @bind="newDocTitle" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Category <span class="text-danger">*</span></label>
+                        <select class="form-select" @bind="newDocCategory">
+                            <option value="Personal Files">Personal Files</option>
+                            <option value="Project Documents">Project Documents</option>
+                            <option value="Team Resources">Team Resources</option>
+                            <option value="Reports">Reports</option>
+                            <option value="Presentations">Presentations</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Associated Project (Optional)</label>
+                        <select class="form-select" @bind="newDocProjectId">
+                            <option value="">None (Personal)</option>
+                            @foreach (var proj in availableProjects)
+                            {
+                                <option value="@proj.ProjectId">@proj.Name</option>
+                            }
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Description (Optional)</label>
+                        <textarea class="form-control" rows="2" placeholder="Brief summary of document..." @bind="newDocDescription"></textarea>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Tags (Optional)</label>
+                        <input type="text" class="form-control" placeholder="e.g. finance, draft, q4" @bind="newDocTags" />
+                    </div>
+
+                    @if (isUploading)
+                    {
+                        <div class="progress mb-3" style="height: 10px;">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated bg-primary" style="width: 100%"></div>
+                        </div>
+                        <p class="text-center text-muted small">Saving document securely...</p>
+                    }
+                </div>
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CloseUploadModal" disabled="@isUploading">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="SubmitUploadAsync" disabled="@isUploading">
+                        @if (isUploading)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                            <span>Uploading...</span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-check-lg me-1"></i>
+                            <span>Upload</span>
+                        }
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Share Modal -->
+@if (showShareModal && documentToShare != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header bg-secondary text-white">
+                    <h5 class="modal-title"><i class="bi bi-share me-2"></i>Share "@documentToShare.Title"</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CloseShareModal"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <p class="small text-muted mb-3">Select a colleague to grant read access to this document.</p>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Colleague</label>
+                        <select class="form-select" @bind="targetShareUserId">
+                            <option value="0">-- Select User --</option>
+                            @foreach (var user in availableUsers.Where(u => u.UserId != currentUserId))
+                            {
+                                <option value="@user.UserId">@user.DisplayName (@user.Department)</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CloseShareModal">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="SubmitShareAsync" disabled="@(targetShareUserId == 0)">
+                        Share
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Document> allDocuments = new();
+    private List<Document> filteredDocuments = new();
+    private List<Project> availableProjects = new();
+    private List<User> availableUsers = new();
+
+    private int currentUserId;
+    private bool isAdministrator;
+    private bool isLoading = true;
+    private bool isUploading = false;
+    private bool showUploadModal = false;
+    private bool showShareModal = false;
+
+    private string? successMessage;
+    private string? errorMessage;
+    private string? modalError;
+
+    private string searchTerm = "";
+    private string selectedCategory = "All";
+
+    // Upload modal state
+    private IBrowserFile? selectedBrowserFile;
+    private Guid inputFileKey = Guid.NewGuid();
+    private string newDocTitle = "";
+    private string newDocCategory = "Personal Files";
+    private string? newDocDescription;
+    private string? newDocProjectId;
+    private string? newDocTags;
+
+    // Share modal state
+    private Document? documentToShare;
+    private int targetShareUserId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            var idClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (int.TryParse(idClaim, out var id))
+            {
+                currentUserId = id;
+            }
+            isAdministrator = user.IsInRole("Administrator");
+        }
+
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        isLoading = true;
+        try
+        {
+            allDocuments = await DocumentService.GetUserDocumentsAsync(currentUserId);
+            availableProjects = await ProjectService.GetUserProjectsAsync(currentUserId);
+            availableUsers = await UserService.GetAllUsersAsync();
+            ApplyFilter();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Failed to load documents: " + ex.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private Task ApplyFilterAsync()
+    {
+        ApplyFilter();
+        return Task.CompletedTask;
+    }
+
+    private void ApplyFilter()
+    {
+        var query = allDocuments.AsEnumerable();
+
+        if (!string.IsNullOrWhiteSpace(selectedCategory) && selectedCategory != "All")
+        {
+            query = query.Where(d => d.Category.Equals(selectedCategory, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            var term = searchTerm.Trim().ToLower();
+            query = query.Where(d =>
+                d.Title.ToLower().Contains(term) ||
+                (d.Description != null && d.Description.ToLower().Contains(term)) ||
+                (d.Tags != null && d.Tags.ToLower().Contains(term)) ||
+                d.FileName.ToLower().Contains(term));
+        }
+
+        filteredDocuments = query.ToList();
+    }
+
+    private void OpenUploadModal()
+    {
+        modalError = null;
+        newDocTitle = "";
+        newDocCategory = "Personal Files";
+        newDocDescription = null;
+        newDocProjectId = null;
+        newDocTags = null;
+        selectedBrowserFile = null;
+        inputFileKey = Guid.NewGuid();
+        showUploadModal = true;
+    }
+
+    private void CloseUploadModal()
+    {
+        showUploadModal = false;
+        selectedBrowserFile = null;
+    }
+
+    private void HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        modalError = null;
+        selectedBrowserFile = e.File;
+        if (selectedBrowserFile != null && string.IsNullOrWhiteSpace(newDocTitle))
+        {
+            newDocTitle = Path.GetFileNameWithoutExtension(selectedBrowserFile.Name);
+        }
+    }
+
+    private async Task SubmitUploadAsync()
+    {
+        modalError = null;
+
+        if (selectedBrowserFile == null)
+        {
+            modalError = "Please select a file to upload.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(newDocTitle))
+        {
+            modalError = "Please enter a document title.";
+            return;
+        }
+
+        if (selectedBrowserFile.Size > 25 * 1024 * 1024)
+        {
+            modalError = "File size exceeds the 25 MB limit.";
+            return;
+        }
+
+        isUploading = true;
+
+        try
+        {
+            int? projectId = int.TryParse(newDocProjectId, out var pId) ? pId : null;
+
+            // Safe memory stream copy to prevent Blazor circuit stream disposal issues
+            var fileName = selectedBrowserFile.Name;
+            var fileSize = selectedBrowserFile.Size;
+            var contentType = selectedBrowserFile.ContentType;
+
+            using var memoryStream = new MemoryStream();
+            using (var readStream = selectedBrowserFile.OpenReadStream(25 * 1024 * 1024))
+            {
+                await readStream.CopyToAsync(memoryStream);
+            }
+            memoryStream.Position = 0;
+
+            // Clear browser file reference
+            selectedBrowserFile = null;
+
+            await DocumentService.UploadDocumentAsync(
+                memoryStream,
+                fileName,
+                contentType,
+                fileSize,
+                newDocTitle,
+                newDocCategory,
+                newDocDescription,
+                projectId,
+                newDocTags,
+                currentUserId);
+
+            CloseUploadModal();
+            successMessage = "Document uploaded successfully!";
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            modalError = ex.Message;
+        }
+        finally
+        {
+            isUploading = false;
+        }
+    }
+
+    private async Task DeleteDocumentAsync(Document doc)
+    {
+        if (await DocumentService.DeleteDocumentAsync(doc.DocumentId, currentUserId))
+        {
+            successMessage = $"Deleted '{doc.Title}' successfully.";
+            await LoadDataAsync();
+        }
+        else
+        {
+            errorMessage = "Failed to delete document or unauthorized.";
+        }
+    }
+
+    private void OpenShareModal(Document doc)
+    {
+        documentToShare = doc;
+        targetShareUserId = 0;
+        showShareModal = true;
+    }
+
+    private void CloseShareModal()
+    {
+        showShareModal = false;
+        documentToShare = null;
+    }
+
+    private async Task SubmitShareAsync()
+    {
+        if (documentToShare == null || targetShareUserId == 0) return;
+
+        if (await DocumentService.ShareDocumentAsync(documentToShare.DocumentId, targetShareUserId, currentUserId))
+        {
+            successMessage = $"Shared '{documentToShare.Title}' successfully!";
+            CloseShareModal();
+        }
+        else
+        {
+            errorMessage = "Failed to share document.";
+        }
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        return $"{bytes / (1024.0 * 1024.0):F2} MB";
+    }
+
+    private static bool CanPreview(string fileName)
+    {
+        var ext = Path.GetExtension(fileName).ToLowerInvariant();
+        return ext is ".pdf" or ".png" or ".jpg" or ".jpeg" or ".txt";
+    }
+
+    private static MarkupString GetFileIcon(string fileName)
+    {
+        var ext = Path.GetExtension(fileName).ToLowerInvariant();
+        var iconClass = ext switch
+        {
+            ".pdf" => "bi-file-earmark-pdf text-danger",
+            ".doc" or ".docx" => "bi-file-earmark-word text-primary",
+            ".xls" or ".xlsx" => "bi-file-earmark-excel text-success",
+            ".ppt" or ".pptx" => "bi-file-earmark-ppt text-warning",
+            ".png" or ".jpg" or ".jpeg" => "bi-file-earmark-image text-info",
+            ".txt" => "bi-file-earmark-text text-secondary",
+            _ => "bi-file-earmark text-muted"
+        };
+        return new MarkupString($"<i class=\"bi {iconClass}\"></i>");
+    }
+}
