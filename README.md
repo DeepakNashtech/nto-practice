@@ -78,6 +78,8 @@ ContosoDashboard is built using ASP.NET Core 8.0 with Blazor Server and provides
 - **Data Models**: Complete entity framework models for Users, Tasks, Projects, Notifications, and Announcements
 - **Business Services**: Service layer for all core functionality (Tasks, Projects, Users, Notifications, Dashboard)
 - **Database Context**: EF Core DbContext with relationships, indexes, and seed data
+- **Document Upload & Management**: Secure document upload, category organization, project association, search & filter, browser preview, download, sharing, and role-based access control
+- **Offline File Storage Service**: Abstraction layer (`IFileStorageService`) with protected storage outside `wwwroot` and path traversal protection
 
 ### 🔧 Technical Stack
 
@@ -294,6 +296,7 @@ The application includes pre-seeded data for testing:
 | Tasks | `/tasks` | View and manage your tasks | Yes |
 | Projects | `/projects` | View your projects | Yes |
 | Project Details | `/projects/{id}` | Detailed project view | Yes (member only) |
+| Documents | `/documents` | View, upload, search, share, and download documents | Yes |
 | Team | `/team` | View team members | Yes |
 | Notifications | `/notifications` | Manage notifications | Yes |
 | Profile | `/profile` | Edit your profile | Yes |
@@ -328,6 +331,37 @@ The application includes pre-seeded data for testing:
 - Availability status management
 - Notification preferences
 - Display initials when no photo is set
+
+### Document Upload and Management
+
+The Document Upload and Management feature enables Contoso employees to securely store, categorize, search, preview, and share work-related documents.
+
+- **Supported File Types**: PDF, Word (`.doc`, `.docx`), Excel (`.xls`, `.xlsx`), PowerPoint (`.ppt`, `.pptx`), Plain Text (`.txt`), and Images (`.png`, `.jpg`, `.jpeg`).
+- **File Size Limit**: Up to 25 MB per file with automatic client-side and service-side validation.
+- **Organization & Categories**: Documents can be categorized into *Project Documents*, *Team Resources*, *Personal Files*, *Reports*, *Presentations*, and *Other*.
+- **Project Association**: Optional association with projects to provide team-wide visibility.
+- **Secure Storage Architecture**: Files are stored outside `wwwroot` in `AppData/uploads/{userId}/...` using unique GUIDs to prevent path traversal, with clean abstraction through `IFileStorageService` for future Azure Blob Storage migration.
+- **Safe Blazor Streaming**: Implements memory-buffered streaming to prevent Blazor Server circuit disposal issues.
+- **Access & Security**: Direct download and preview are governed by authorized API endpoints (`/api/documents/{id}/download` and `/preview`) with IDOR protection.
+- **Document Sharing**: Users can share documents with colleagues, which dispatches in-app notifications.
+
+#### Visual Evidence & User Flow
+
+1. **Document Management Overview (Empty State)**  
+   Users access the centralized Document Management workspace with search by title/tag/description and category filtering.  
+   ![Document Management Overview](assets/images/Screenshot%202026-09-11%20123223.png)
+
+2. **Upload Document Dialog**  
+   Clicking the "Upload Document" button opens a dedicated modal with validation for file selection, title, category, project association, description, and tags.  
+   ![Upload Document Dialog](assets/images/Screenshot%202026-09-11%20123247.png)
+
+3. **Selecting and Validating Document**  
+   Choosing a file validates file size and supported extensions, auto-populating document metadata.  
+   ![Selecting and Validating Document](assets/images/Screenshot%202026-09-11%20123331.png)
+
+4. **Upload Confirmation & Document Management View**  
+   Upon upload, an alert confirms success, and the new document appears in the interactive data table with category badge, formatted file size, uploader identity, and quick actions (Download, Browser Preview, Share, and Delete).  
+   ![Upload Confirmation and Documents Table](assets/images/Screenshot%202026-09-11%20123346.png)
 
 ## Troubleshooting
 
